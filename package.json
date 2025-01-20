@@ -1,0 +1,18 @@
+{
+  "name": "video_lite",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "aws-sdk": "^2.1692.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "mongodb": "^6.12.0"
+  }
+}
