@@ -20,10 +20,10 @@ Installation
 Clone the repository:
 
 `bash`
-\`\`\`
+```
 git clone <repository-url>
 cd <repository-directory>
-\`\`\`
+```
 
 ### Pass The Environment Variables At Run Time
 - **mongourl**: MongoDB connection string.
@@ -35,48 +35,36 @@ cd <repository-directory>
 ### Build and run the Docker container:
 
 `bash`
-\`\`\`
+```
 docker build -t <image_name> .
+```
+
+`bash`
+```
 docker run -d \
--e mongourl=<mongourl>
--e accessKeyId=<accessKeyId>
--e secretAccessKey=<secretAccessKey>
--e region=<region>
--e bucket=<bucket>
+-e mongourl=<your mongourl>
+-e accessKeyId=<your accessKeyId>
+-e secretAccessKey=<your secretAccessKey>
+-e region=<your bucket region>
+-e bucket=<your bucket name>
 <image_name>
-\`\`\`
-
+```
 ### Configuration
-**MongoDB**: Ensure MongoDB is running and accessible.
-**AWS S3**: Configure AWS credentials and S3 bucket details.
+- **MongoDB**: Ensure MongoDB is running and accessible.
+- **AWS S3**: Configure AWS credentials and S3 bucket details.
 
+### The service will:
 
-Usage
-Start the service:
+- Connect to MongoDB.
+- Connect to AWS S3.
+- Enter an infinite loop to:
+  - Retrieve S3 file paths from the MongoDB database.
+  - Pull the objects from AWS S3.
+  - Compress MP4 files and create a readable stream.
+  - Write the compressed files to the local server.
+  - Upload the compressed files to the AWS S3 bucket with the original file path and remove the previous file.
+  - Remove the compressed files from the local server.
+  - Sleep for 5 seconds before processing the next file.
 
-bash
-node app.js
-The service will:
-
-Connect to MongoDB.
-
-Connect to AWS S3.
-
-Enter an infinite loop to:
-
-Retrieve S3 file paths from the MongoDB database.
-
-Pull the objects from AWS S3.
-
-Compress MP4 files and create a readable stream.
-
-Write the compressed files to the local server.
-
-Upload the compressed files to the AWS S3 bucket with the original file path.
-
-Remove the compressed files from the local server.
-
-Sleep for 5 seconds before processing the next file.
-
-Contributing
+### Contributing
 Feel free to open issues or submit pull requests for any improvements or bug fixes.
