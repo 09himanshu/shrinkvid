@@ -36,7 +36,7 @@ cd <repository-directory>
 
 `bash`
 ```
-docker build -t <image_name> .
+docker build -t shrinkvid .
 ```
 
 `bash`
@@ -47,7 +47,7 @@ docker run -d \
 -e secretAccessKey=<your secretAccessKey>
 -e region=<your bucket region>
 -e bucket=<your bucket name>
-<image_name>
+shrinkvid
 ```
 ### Configuration
 - **MongoDB**: Ensure MongoDB is running and accessible.
@@ -64,7 +64,7 @@ docker run -d \
   - Write the compressed files to the local server.
   - Upload the compressed files to the AWS S3 bucket with the original file path and remove the previous file.
   - Remove the compressed files from the local server.
-  - Sleep for 5 seconds before processing the next file.
+  - Sleep for 1 minutes before processing the next file.
 
 ### Contributing
 Feel free to open issues or submit pull requests for any improvements or bug fixes.

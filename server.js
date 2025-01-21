@@ -16,11 +16,50 @@ AWS.config.update({
 })
 
 const s3 = new AWS.S3()
-
 const db = new Database(mongourl)
 
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const get_db_data = async () => {
+  try {
+    let data = await db.aggegrate({
+      collection: '_med_contents',
+      filter: [
+        {
+          $match: {
+            compress: {
+              $exists: false
+            }
+          }
+        },
+        {
+          $lookup: {
+            from: 'files_checksum',
+            localField: 'sessionId',
+            foreignField: 'sessionId',
+            as: 'result'
+          }
+        },
+        {
+          $unwind: {
+            path: '$result',
+            preserveNullAndEmptyArrays: false
+          }
+        },
+        {
+          $project: {
+            result: 1
+          }
+        }
+      ]
+    })
+    
+    return data
+  } catch (err) {
+    console.log(err);
+  }
+}
 
 const compress_S3_Video = async () => {
   try {
@@ -28,55 +67,21 @@ const compress_S3_Video = async () => {
     let count = 0
 
     while (true) {
-      let data1 = await db.aggegrate({
-        collection: '_med_contents',
-        filter: [
-          {
-            $match: {
-              compress: {
-                $exists: false
-              }
-            }
-          },
-          {
-            $lookup: {
-              from: 'files_checksum',
-              localField: 'sessionId',
-              foreignField: 'sessionId',
-              as: 'result'
-            }
-          },
-          {
-            $unwind: {
-              path: '$result',
-              preserveNullAndEmptyArrays: false
-            }
-          },
-          {
-            $project: {
-              result: 1
-            }
-          }
-        ]
-      })
 
-      if (!data1) continue
+      let db_data = await get_db_data()
+      if (!db_data.length) {
+        await sleep(60000)
+        continue
+      }
 
-      for (let ele of data1) {
+      for (let ele of db_data) {
         try {
           console.log(++count);
-
-          let data = await db.findOne({
-            collection: 'files_checksum',
-            filter: { sessionId: ele.result.sessionId }
-          });
-
-          if (!data) continue;
           let outputFilePath = `${Date.now()}.mp4`;
 
           const readStream = s3.getObject({
             Bucket: bucket,
-            Key: data.s3Key
+            Key: ele.result.s3Key
           }).createReadStream();
 
           await new Promise((resolve, reject) => {
@@ -102,10 +107,14 @@ const compress_S3_Video = async () => {
               .saveToFile(outputFilePath);
           });
 
+          await chunk_upload_file(outputFilePath, ele.result.s3Key)
+
+          fs.unlinkSync(outputFilePath)
           console.log('Sleeping for 1 minute...');
           await sleep(60000);
         } catch (err) {
           console.log(err);
+          await sleep(60000);
           continue
         }
       }
@@ -116,121 +125,109 @@ const compress_S3_Video = async () => {
   }
 }
 
-// await compress_S3_Video()
 
 const createMultipartUpload = async (key) => {
   try {
-    const params = {
-      Bucket: bucket,
-      Key: key
-    }
-
-    let createUpload = await s3.createMultipartUpload(params).promise()
-    return createUpload.UploadId
+    const params = { Bucket: bucket, Key: key };
+    let createUpload = await s3.createMultipartUpload(params).promise();
+    return createUpload.UploadId;
   } catch (err) {
-    console.log(err);
+    console.log('Error creating multipart upload:', err);
   }
-}
+};
 
 const completeMultipartUpload = async (key, uploadId, parts) => {
   try {
     const params = {
       Bucket: bucket,
       Key: key,
-      MultipartUpload: {
-        Parts: parts
-      },
+      MultipartUpload: { Parts: parts },
       UploadId: uploadId
-    }
-
-    return s3.completeMultipartUpload(params).promise()
+    };
+    return s3.completeMultipartUpload(params).promise();
   } catch (err) {
-    console.log(err);
-    
+    console.log('Error completing multipart upload:', err);
   }
-}
+};
 
-const chunk_upload_file = async () => {
+const chunk_upload_file = async (filename, key) => {
   try {
-    let key = `test/mufasa.mp4`
-    let uploadParts = []
-    let partNumber = 1
-    let buffer = Buffer.alloc(0)
-    const chunkSize = 30 * 1024 * 1024 // 30 MB
-    
-    let readableStream = fs.createReadStream('Mufasa.mp4') 
+    let uploadParts = [];
+    const chunkSize = 30 * 1024 * 1024; // 30 MB
+    // let key = 'upload/mufasa.mp4'
 
-    let uploadId = await createMultipartUpload(key)
+    let readableStream = fs.createReadStream(filename);
+    let uploadId = await createMultipartUpload(key);
     console.log(uploadId);
-    
 
-    for await (let ele of readableStream) {
-      buffer = Buffer.concat([buffer,ele])
-      if(buffer.length >= chunkSize) {
-        let part = buffer.slice(0,chunkSize)
-        const params = {
-          Bucket: bucket,
-          Key: key,
-          PartNumber: partNumber,
-          UploadId: uploadId,
-          Body: part
-        }
+    let buffer = Buffer.alloc(0);
+    let partNumber = 1;
 
-        try {
-          const uploadPart = await s3.uploadPart(params).promise()
-          console.log(partNumber);
-          
-          uploadParts.push(
-            {
-              Etag: uploadPart.ETag,
-              PartNumber: partNumber
-            }
-          )
-          partNumber++
-          buffer = buffer.slice(chunkSize)
-        } catch (err) {
-          console.log(err);
-          return
-        }
-      }
-    }
-
-    if(buffer.length) {
-      let part = buffer.slice(0, chunkSize)
+    // Function to handle upload chunk process
+    const uploadChunk = async (partBuffer, partNum) => {
+      console.log(`Uploading part ${partNum}`);
       const params = {
         Bucket: bucket,
         Key: key,
-        PartNumber: partNumber,
+        PartNumber: partNum,
         UploadId: uploadId,
-        Body: part
-      }
+        Body: partBuffer
+      };
 
-      try {
-        const uploadPart = await s3.uploadPart(params).promise()
-        uploadParts.push(
-          {
-            ETag: uploadPart.ETag,
-            PartNumber: partNumber
-          }
-        )
-      } catch (err) {
-        console.log(err);
-        return
+      let partResponse = await s3.uploadPart(params).promise();
+      uploadParts.push({
+        ETag: partResponse.ETag,
+        PartNumber: partNum
+      });
+    };
+
+    let uploadPromises = [];
+
+    // Reading chunks from the file
+    for await (let chunk of readableStream) {
+      buffer = Buffer.concat([buffer, chunk]);
+
+      if (buffer.length >= chunkSize) {
+        let partBuffer = buffer.slice(0, chunkSize);
+        uploadPromises.push(uploadChunk(partBuffer, partNumber));
+        partNumber++;
+        buffer = buffer.slice(chunkSize);
+
+        // Limit to 5 parallel uploads
+        if (uploadPromises.length >= 5) {
+          await Promise.all(uploadPromises);
+          uploadPromises = [];
+          console.log(uploadParts);
+          
+        }
       }
     }
 
-    await completeMultipartUpload(KeyObject, uploadId, uploadParts)
+    // Handle any remaining buffer
+    if (buffer.length) {
+      uploadPromises.push(uploadChunk(buffer, partNumber));
+    }
 
-    let link = await s3.getSignedUrl('getObject',{
-      Bucket: bucket,
-      Key: key
-    })
-    console.log('==================', link)
-  } catch (err) {
-    console.log(err);
+    // Make sure all remaining uploads are completed
+    await Promise.all(uploadPromises);
+
     
+    uploadParts.sort((a,b) => a.PartNumber-b.PartNumber)
+    console.log('Uploaded parts:', uploadParts);
+
+    // Complete multipart upload
+    await completeMultipartUpload(key, uploadId, uploadParts);
+
+    // Get a signed URL to access the uploaded file
+    const params = { Bucket: bucket, Key: key, Expires: 60 };
+    const link = s3.getSignedUrl('getObject', params);
+    console.log('Uploaded file URL:', link);
+  } catch (err) {
+    console.log('Error in chunk_upload_file:', err);
   }
-}
+};
 
 
-await chunk_upload_file()
+// await chunk_upload_file()
+
+await compress_S3_Video()
