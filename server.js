@@ -2,6 +2,7 @@ import ffmpeg from 'fluent-ffmpeg'
 import AWS from 'aws-sdk'
 import fs from 'fs'
 import { Database } from './db.js'
+import { PassThrough } from 'stream'
 
 let accessKeyId = process.env.accessKeyId
 let secretAccessKey = process.env.secretAccessKey
@@ -61,6 +62,36 @@ const get_db_data = async () => {
   }
 }
 
+
+const checkVideoResolution = async (key) => {
+  return new Promise((resolve, reject) => {
+    const passThrough = new PassThrough()
+
+    const stream = s3.getObject({
+      Bucket: bucket,
+      Key: key
+    }).createReadStream()
+    stream.pipe(passThrough)
+
+    ffmpeg(passThrough)
+    .ffprobe((err, metadata) => {
+      if(err) {
+        return reject(err)
+      }
+
+      const videoStream = metadata.streams.find(stream => stream.codec_type === 'video')
+
+      if(!videoStream) {
+        return reject(new Error('No video stream found'))
+      }
+
+      const width = videoStream.width
+      const height = videoStream.height
+      resolve({width,height})
+    })
+  })
+}
+
 const compress_S3_Video = async () => {
   try {
 
@@ -77,6 +108,12 @@ const compress_S3_Video = async () => {
       for (let ele of db_data) {
         try {
           console.log(++count);
+          const resolution = await  checkVideoResolution(ele.result.s3Key)
+          if (resolution.width <= 854 && resolution.height <= 480) {
+            console.log('The video resolution is 480p or less. Skipping compression.');
+            continue;
+          }
+
           let outputFilePath = `${Date.now()}.mp4`;
 
           const readStream = s3.getObject({
@@ -124,7 +161,6 @@ const compress_S3_Video = async () => {
     process.exit(0)
   }
 }
-
 
 const createMultipartUpload = async (key) => {
   try {
@@ -227,7 +263,5 @@ const chunk_upload_file = async (filename, key) => {
   }
 };
 
-
-// await chunk_upload_file()
 
 await compress_S3_Video()
