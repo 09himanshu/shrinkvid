@@ -22,10 +22,11 @@ const db = new Database(mongourl)
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Change this db section according to your use
 const get_db_data = async () => {
   try {
     let data = await db.aggegrate({
-      collection: '_med_contents',
+      collection: <collection name>,
       filter: [
         {
           $match: {
@@ -36,9 +37,9 @@ const get_db_data = async () => {
         },
         {
           $lookup: {
-            from: 'files_checksum',
-            localField: 'sessionId',
-            foreignField: 'sessionId',
+            from: <collection name>,
+            localField: <local id>,
+            foreignField: <foreign id>,
             as: 'result'
           }
         },
